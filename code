@@ -1,0 +1,1158 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+//时间点
+typedef struct time_T{
+    int year;//年
+    int month;//月
+    int day;//日
+    int y_day;//年内的天数
+    int hour;//时
+    int min;//分
+}time_;
+
+//时间结点
+typedef struct Time_{
+    time_* up;//上机的时间点
+    time_* down;//下机的时间点
+    double money;//本次消费
+    struct Time_*next;//指向下一个时间结点
+}Time;
+
+//卡
+typedef struct card{
+    long long id;//卡号
+    char secret[20];//密码
+    double card_money;//卡余额
+    int state;//0为未激活，1为激活
+    Time time_head;//时间结点头
+    struct card*next;//指向下一个卡
+}Card;
+
+//计费标准
+typedef struct Bill_standard{
+    int num;//计费标准的个数(用于计费标准头)
+    int hour;//小时
+    double money;//钱
+    struct Bill_standard*next;//指向下一个计费标准
+}bs;
+struct bs_tmp{//计费标准临时结构体
+    int hour;
+    double money;
+    char hh;
+};
+
+//用户
+typedef struct User{
+    //1为有权限，0为无权限
+    char name[20];//用户名
+    int read;//读权限
+    int alter;//写权限
+    struct User*next;//指向下一个用户
+}user;
+
+Card head;
+bs bs_head;
+user super_user;
+user* user_now=&super_user;
+
+void init_head_();//将卡信息从文件写入程序
+void init_head();//卡头初始化
+void init_bill_standard_();//将计费标准从文件中写入程序
+void init_bill_standard();//计费标准头初始化
+int init_user_();//将管理员从文件写入程序
+void init_user();//超级用户初始化
+
+void card_write();//将卡内容写入文件
+void card_create(long long id,char secret[20],double card_open);//新建卡与初始化
+void card_add();//添加卡功能
+void card_query();//查询卡功能
+void card_delete();//删除卡功能
+void card_management();
+
+void bill_standard_create(int hour,double money);//新建计费标准与初始化
+void bill_standard_add();//新增计费标准功能
+int bill_standard_query(Time*node);//查询计费标准功能
+void bill_standard_delete();//删除计费标准功能
+void bill_standard_alter();//修改计费标准功能
+void bill_standard_management();
+
+int transform_y_day(int month,int day);//将月日转化为年内天数
+time_* bill_time_create();//新建时间结点
+void bill_up_create(Time*node);//新建上机时间结点
+double bill_down_create(Time*node);//新建下机时间结点
+int is_up(Time*node);//判断是否上机
+void bill_boarding();//上机功能
+void bill_disembarking();//下机功能
+void bill_management();
+
+void cost_recharge();//充值功能
+void cost_refund();//退费功能
+void cost_management();
+
+void query_card_print(Time*node);//卡消费记录打印
+void query_card_total_count(Time*node,double *sum);//总营业额统计
+void query_card_month_count(Time*node,double *sum,int*board);//月营业额统计
+void query_card_consumption(Time*node,time_*t1,time_*t2,int i,double* sum);//卡消费
+void query_consumption_record();//查询卡消费记录功能
+void query_total_turnover();//查询总营业额功能
+void query_month_turnover();//查询月营业额功能
+void query_statistics();
+
+void user_write();//将用户信息写入文件
+void user_rights_management(user*node);//设置管理员权限
+void user_add();//添加管理员功能
+void user_delete();//删除管理员功能
+void rights_management();
+
+void sys_login(int num);//登录功能
+void sys();
+
+void write();//将信息写入文件中
+
+
+//------------------------------------------------------------
+//初始化
+void init_head_(){
+    FILE *fp;
+    if((fp= fopen("card1.txt","r"))==NULL){
+        printf("打开文件card1.txt失败");
+        exit(0);
+    }
+    Card *c = &head;
+    fscanf(fp,"\n\n");
+    if(feof(fp)){
+        if(fclose(fp)){
+            printf("关闭文件card1.txt失败");
+            exit(0);
+        }
+        return;
+    }
+    rewind(fp);
+    while(!feof(fp)){
+        Card*node = (Card*)malloc(sizeof(Card));
+        c->next = node;
+        node->next = NULL;
+        node->time_head.up=NULL;
+        node->time_head.down=NULL;
+        node->time_head.next=NULL;
+        node->time_head.money=0;
+        fscanf(fp,"%lld %s %lf %d\n",&node->id,node->secret,&node->card_money,&node->state);
+        c = c->next;
+    }
+    if(fclose(fp)){
+        printf("关闭文件card1.txt失败");
+        exit(0);
+    }
+}//将卡信息从文件写入程序
+void init_head(){
+    head.id=0;
+    strcpy(head.secret,"head");
+    head.card_money=0;
+    head.state=-1;
+    head.time_head.next=NULL;
+    head.time_head.up=NULL;
+    head.time_head.down=NULL;
+    head.next=NULL;
+    init_head_();
+}//卡头初始化
+void init_bill_standard_(){
+    FILE *fp;
+    if((fp= fopen("D:\\wangba\\data\\rate.txt","r"))==NULL){
+        printf("打开文件rate.txt失败");
+        exit(0);
+    }
+    bs*b = &bs_head;
+    while(!feof(fp)){
+        bs*node = (bs*) malloc(sizeof(bs));
+        b->next = node;
+        node->next=NULL;
+        node->num=0;
+        fscanf(fp,"%d %lf\n",&node->hour,&node->money);
+        bs_head.num++;
+        b = b->next;
+    }
+    if(fclose(fp)){
+        printf("关闭文件rate.txt失败");
+        exit(0);
+    }
+}//将计费标准从文件中写入程序
+void init_bill_standard(){
+    bs_head.num=0;
+    bs_head.next=NULL;
+    bs_head.hour=0;
+    bs_head.money=0;
+    init_bill_standard_();
+}//计费标准头初始化
+int init_user_(){
+    FILE *fp;
+    if((fp= fopen("user.txt","r"))==NULL){
+        printf("打开文件user.txt失败");
+        exit(0);
+    }
+    user*u = &super_user;
+    fscanf(fp,"%s ",u->name);
+    if(feof(fp)){
+        if(fclose(fp)){
+            printf("关闭文件user.txt失败");
+            exit(0);
+        }
+        return 1;
+    }
+    fscanf(fp,"%d %d\n",&u->read,&u->alter);
+    while(!feof(fp)){
+        user *node = (user*) malloc(sizeof(user));
+        u->next = node;
+        node->next=NULL;
+        fscanf(fp,"%s %d %d\n",node->name,&node->read,&node->alter);
+        u = u->next;
+    }
+    if(fclose(fp)){
+        printf("关闭文件user.txt失败");
+        exit(0);
+    }
+    return 0;
+}//将管理员从文件写入程序
+void init_user(){
+    if(init_user_()){
+        printf("正在创建超级管理员-->\n");
+        printf("请输入超级管理员姓名:\n");
+        char name[20];
+        scanf("%s",name);
+        strcpy(super_user.name,name);
+        super_user.read=1;
+        super_user.alter=1;
+        super_user.next=NULL;
+        printf("登入成功\n");
+        FILE *fp;
+        if((fp= fopen("user.txt","a"))==NULL){
+            printf("打开文件user.txt失败");
+            exit(0);
+        }
+        fprintf(fp,"%s %d %d\n",super_user.name,super_user.read,super_user.alter);
+        if(fclose(fp)){
+            printf("关闭文件user.txt失败");
+            exit(0);
+        }
+    }
+}//超级用户初始化
+
+//卡管理
+void card_write(){
+    FILE *fp;
+    if((fp= fopen("card1.txt","w"))==NULL){
+        printf("打开文件card1.txt失败");
+        exit(0);
+    }
+    Card *node=head.next;
+    while(node){
+        fprintf(fp,"%lld %s %lf %d\n",node->id,node->secret,node->card_money,node->state);
+        node = node->next;
+    }
+    if(fclose(fp)){
+        printf("关闭文件card1.txt失败");
+        exit(0);
+    }
+}//将卡内容写入文件
+void card_create(long long id,char secret[20],double card_open){
+    Card*node = &head;
+    while(node->next){
+        node = node->next;
+    }
+    Card*card = (Card*) malloc(sizeof(Card));
+    if(card==NULL){
+        printf("分配内存失败\n");
+        return ;
+    }
+    node->next=card;
+    card->id=id;
+    strcpy(card->secret,secret);
+    card->card_money=card_open;
+    card->state=1;
+    card->time_head.next=NULL;
+    card->time_head.up=NULL;
+    card->time_head.down=NULL;
+    card->time_head.money=0;
+    card->next=NULL;
+}//新建卡与初始化
+void card_add(){
+    FILE*fp;
+    Card c;
+    c.next=NULL;
+    int flag;
+    if((fp= fopen("D:\\wangba\\data\\card.txt","a"))==NULL){
+        printf("打开文件card.txt失败");
+        exit(0);
+    }
+    loop_card:printf("请输入卡号、密码、开卡金额等卡信息:\n");
+    scanf("%lld%s%lf",&c.id,c.secret,&c.card_money);
+    fprintf(fp,"%lld %s %lf\n",c.id,c.secret,c.card_money);
+    card_create(c.id,c.secret,c.card_money);
+    printf("是否继续添加卡?\n");
+    printf("1-继续\t\t0-退出\n");
+    scanf("%d",&flag);
+    if(flag==1) goto loop_card;
+    if(fclose(fp)){
+        printf("关闭文件card.txt失败");
+        exit(0);
+    }
+}//添加卡功能
+void card_query(){
+    long long id;
+    int flag=0;
+    printf("请输入要查询的卡号:");
+    scanf("%lld",&id);
+    Card*node = head.next;
+    while(node) {
+        if (node->id == id) {
+            if (flag == 0) {
+                printf("+-----------------------------------------------+\n");
+                printf("|卡号\t\t|密码\t\t|卡余额\t\t|\n");
+                printf("+-----------------------------------------------+\n");
+            }
+            flag = 1;
+            printf("|%lld\t\t|%s\t\t|%.1lf\t\t|\n",node->id,node->secret,node->card_money);
+            printf("+-----------------------------------------------+\n");        }
+        node = node->next;
+    }
+    if(node==NULL&&flag==0) printf("卡号输入错误\n");
+}//查询卡功能
+void card_delete(){
+    long long id;
+    char secret[20];
+    printf("请输入要注销的卡号和密码:\n");
+    scanf("%lld%s",&id,secret);
+    Card*node=head.next;
+    while(node){
+        if(node->id==id) {
+            if(strcmp(secret,node->secret)==0){
+                node->state=0;
+                printf("注销成功\n");
+                break;
+            }
+            else {
+                printf("密码错误,注销失败\n");
+                break;
+            }
+        }
+        node = node->next;
+    }
+    if(node==NULL) printf("无此卡,注销失败\n");
+}//删除卡功能
+void card_management(){
+    int i;
+    while(1){
+        int flag=0;
+        printf("卡管理:\n");
+        printf("1-添加卡\t2-查询卡\n3-注销卡\t4-退出卡管理\n");
+        scanf("%d",&i);
+        switch(i){
+            case 1:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                card_add();break;
+            case 2:
+                if(user_now->read==0){
+                    printf("无权限\n");
+                    break;
+                }
+                card_query();break;
+            case 3:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                card_delete();break;
+            case 4:flag=1;break;
+            default:printf("输入有误,请重新输入\n");break;
+        }
+        if(flag==1) break;
+    }
+}
+
+//计费标准管理
+void bill_standard_create(int hour,double money){
+    bs *bill = (bs*) malloc(sizeof(bs));
+    if(bill==NULL){
+        printf("分配内存失败\n");
+        return ;
+    }
+    bill->num=0;
+    bill->money = money;
+    bill->hour = hour;
+    bs *pre = &bs_head,*lat=bs_head.next;
+    //费用结点小时数由小到大
+    while(lat&&bill->hour>lat->hour){
+        pre = pre->next;
+        lat = lat->next;
+    }
+    pre->next = bill;
+    bill->next = lat;
+}//新建计费标准与初始化
+void bill_standard_add(){
+    FILE *fp;
+    int hour,flag;
+    double money;
+    if((fp= fopen("D:\\wangba\\data\\rate.txt","a"))==NULL){
+        printf("打开文件rate.txt失败");
+        exit(0);
+    }
+    loop_bill:printf("请输入计费标准的信息(多少小时多少钱):\n");
+    scanf("%d%lf",&hour,&money);
+    fprintf(fp,"%d %lf\n",hour,money);
+    bill_standard_create(hour,money);
+    bs_head.num++;
+    printf("是否继续添加计费标准?\n");
+    printf("1-继续\t\t0-退出\n");
+    scanf("%d",&flag);
+    if(flag==1) goto loop_bill;
+    if(fclose(fp)){
+        printf("关闭文件rate.txt失败");
+        exit(0);
+    }
+}//新增计费标准功能
+int bill_standard_query(Time*node){
+    time_ all;
+    if(node->up->year<node->down->year){
+        if(node->up->y_day>node->down->y_day)
+            all.y_day = 366-(node->up->y_day-node->down->y_day)+366*(node->down->year-node->up->year-1);
+        else
+            all.y_day = node->down->y_day-node->up->y_day+366*(node->down->year-node->up->year);
+    }
+    else all.y_day = node->down->y_day-node->up->y_day;
+    if(node->up->hour>node->down->hour){
+        all.hour = 24-(node->up->hour-node->down->hour);
+        all.y_day--;
+    }
+    else{
+        all.hour = node->down->hour-node->up->hour;
+    }
+    if(node->up->min>node->down->min)
+        all.min = 60-(node->up->min-node->down->min);
+    else
+        all.min = node->down->min-node->up->min;
+    if(all.min>5) {
+        all.hour++;
+        if(node->up->min>node->down->min) all.hour--;
+    }
+    all.hour = 24*all.y_day+all.hour;
+    bs*node_ = bs_head.next;
+    while(node_&&node_->next&&node_->next->hour<all.hour)
+        node_ = node_->next;
+    if(node_==NULL){
+        printf("无计费标准，请先添加计费标准\n");
+        return -1;
+    }
+    node->money = all.hour*(node_->money/(double )node_->hour);
+    return 0;
+}//查询计费标准功能
+void bill_standard_delete(){
+    int hour;
+    double money;
+    printf("请输入要删除的计费标准,如(1 3.5):\n");
+    scanf("%d%lf",&hour,&money);
+    FILE *fp;
+    if((fp= fopen("D:\\wangba\\data\\rate.txt","r"))==NULL){
+        printf("打开文件rate.txt失败");
+        exit(0);
+    }
+    struct bs_tmp tmp[bs_head.num];
+    for(int i=0;i<bs_head.num;i++){
+        fscanf(fp,"%d%lf%c",&tmp[i].hour,&tmp[i].money,&tmp[i].hh);
+    }
+    if(fclose(fp)){
+        printf("关闭文件rate.txt失败");
+        exit(0);
+    }
+    if((fp= fopen("D:\\wangba\\data\\rate.txt","w"))==NULL) {
+        printf("打开文件rate.txt失败");
+        exit(0);
+    }
+    for(int i=0;i<bs_head.num;i++){
+        if(hour==tmp[i].hour&&money==tmp[i].money) continue;
+        fprintf(fp,"%d %lf\n",tmp[i].hour,tmp[i].money);
+    }
+    if(fclose(fp)){
+        printf("关闭文件rate.txt失败");
+        exit(0);
+    }
+    bs*pre = &bs_head,*lat = bs_head.next;
+    while(lat){
+        if(lat->hour==hour&&lat->money==money){
+            pre->next = lat->next;
+            lat->next = NULL;
+            bs_head.num--;
+            break;
+        }
+        lat = lat->next;
+    }
+    if(lat==NULL){
+        printf("无该计费标准，删除失败\n");
+        return;
+    }
+    free(lat);
+    printf("删除成功\n");
+}//删除计费标准功能
+void bill_standard_alter(){
+    int hour1,hour2;
+    double money1,money2;
+    printf("请输入要修改的计费标准,如(1 2.3):\n");
+    scanf("%d%lf",&hour1,&money1);
+    printf("请输入修改后的计费标准:\n");
+    scanf("%d%lf",&hour2,&money2);
+    bs*node = bs_head.next;
+    while(node){
+        if(node->hour==hour1&&node->money==money1){
+            node->hour = hour2;
+            node->money = money2;
+            break;
+        }
+        node = node->next;
+    }
+    if(node==NULL){
+        printf("无该计费标准，修改失败\n");
+        return;
+    }
+    FILE *fp;
+    if((fp= fopen("D:\\wangba\\data\\rate.txt","r"))==NULL){
+        printf("打开文件rate.txt失败");
+        exit(0);
+    }
+    struct bs_tmp tmp[bs_head.num];
+    for(int i=0;i<bs_head.num;i++){
+        fscanf(fp,"%d%lf%c",&tmp[i].hour,&tmp[i].money,&tmp[i].hh);
+    }
+    if(fclose(fp)){
+        printf("关闭文件rate.txt失败");
+        exit(0);
+    }
+    if((fp= fopen("D:\\wangba\\data\\rate.txt","w"))==NULL){
+        printf("打开文件rate.txt失败");
+        exit(0);
+    }
+    for(int i=0;i<bs_head.num;i++){
+        if(hour1==tmp[i].hour&&money1==tmp[i].money){
+            fprintf(fp,"%d %lf\n",hour2,money2);
+        }
+        else fprintf(fp,"%d %lf\n",tmp[i].hour,tmp[i].money);
+    }
+    if(fclose(fp)){
+        printf("关闭文件rate.txt失败");
+        exit(0);
+    }
+    printf("修改成功\n");
+}//修改计费标准功能
+void bill_standard_management(){
+    int i;
+    while(1){
+        int flag=0;
+        printf("计费标准管理\n");
+        printf("1-新增计费标准\t2-删除计费标准\n3-修改计费标准\t4-退出计费标准管理\n");
+        scanf("%d",&i);
+        switch(i){
+            case 1:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                bill_standard_add();break;
+            case 2:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                bill_standard_delete();break;
+            case 3:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                bill_standard_alter();break;
+            case 4:flag=1;break;
+            default:printf("输入有误,请重新输入\n");break;
+        }
+        if(flag==1) break;
+    }
+}
+
+//计费管理
+int transform_y_day(int month,int day){
+    int y_day=0;
+    for(int i=1;i<month;i++){
+        if(i==2) y_day+=29;
+        else if(i==4||i==6||i==9||i==11) y_day+=30;
+        else y_day+=31;
+    }
+    return y_day+day;
+}//转换成y_day
+time_* bill_time_create(){
+    int i;
+    time_*node = (time_*) malloc(sizeof(time_));
+    if(node==NULL){
+        printf("分配内存失败\n");
+        return NULL;
+    }
+    printf("1-手动输入时间\t2-使用系统时间\n");
+    scanf("%d",&i);
+    if(i==1){
+        printf("请输入年 月 日 时 分\n");
+        scanf("%d%d%d%d%d",&node->year,&node->month,&node->day,&node->hour,&node->min);
+        node->y_day = transform_y_day(node->month,node->day);
+    }
+    else{
+        struct tm*tm=NULL;
+        time_t timer;
+        time(&timer);
+        tm = localtime(&timer);
+        node->year = tm->tm_year+1900;
+        node->month = tm->tm_mon+1;
+        node->day = tm->tm_mday;
+        node->y_day = tm->tm_yday+1;//1-366
+        node->hour = tm->tm_hour;
+        node->min = tm->tm_min;
+    }
+    return node;
+}//新建时间结点
+void bill_up_create(Time*node){
+    //time_node为新建时间点
+    while(node->next) node = node->next;
+    Time *time_node = (Time*) malloc(sizeof(Time));
+    if(time_node==NULL){
+        printf("分配内存失败\n");
+        return ;
+    }
+    node->next=time_node;
+    time_node->money=0;
+    time_node->next = NULL;
+    time_node->up = bill_time_create();
+    time_node->down = NULL;
+}//新建上机时间结点
+double bill_down_create(Time*node){
+    while(node->next) node = node->next;
+    if(node->up==NULL){
+        printf("该卡未上机\n");
+        return 0;
+    }
+    node->down = bill_time_create();
+    if(bill_standard_query(node)){
+        printf("下机失败\n");
+        return 0;
+    }
+    printf("下机成功\n");
+    return node->money;
+}//新建下机时间结点
+int is_up(Time*node){
+    int flag=0;
+    while(node->next){
+        flag = 1;
+        node = node->next;
+    }
+    if(flag==0||(node->up!=NULL&&node->down!=NULL)) return 0;
+    return 1;
+}//判断是否上机中
+void bill_boarding(){
+    long long id;
+    char secret[20];
+    printf("请输入上机的卡号和密码:\n");
+    scanf("%lld%s",&id,secret);
+    Card*node = head.next;
+    while(node){
+        if(node->id==id){
+            if(strcmp(secret,node->secret)==0){
+                if(node->card_money<=0){
+                    printf("余额不足，无法上机\n");
+                    break;
+                }
+                if(is_up(&node->time_head)){
+                    printf("该卡上机中\n");
+                    break;
+                }
+                if(node->state==1){
+                    bill_up_create(&node->time_head);
+                    break;
+                }
+                printf("该卡未激活，无法上机\n");
+                break;
+            }
+            else{
+                printf("密码错误,上机失败\n");
+                break;
+            }
+        }
+        node = node->next;
+    }
+    if(node==NULL) printf("无此卡\n");
+}//上机功能
+void bill_disembarking(){
+    long long id;
+    printf("请输入卡号:\n");
+    scanf("%lld",&id);
+    Card *node = head.next;
+    double money=0;
+    while(node){
+        if(node->id==id){
+            money = bill_down_create(&node->time_head);
+            break;
+        }
+        node = node->next;
+    }
+    if(node==NULL) printf("无此卡，下机失败\n");
+    else if(money==0) return;
+    else{ 
+        node->card_money -=money;
+        if(node->card_money<0) printf("余额不足,请及时充值\n");
+    }
+}//下机功能
+void bill_management(){
+    int i;
+    while(1){
+        int flag=0;
+        printf("计费管理:\n");
+        printf("1-上机\t2-下机\t3-退出计费管理\n");
+        scanf("%d",&i);
+        switch(i){
+            case 1:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                bill_boarding();break;
+            case 2:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                bill_disembarking();break;
+            case 3:flag=1;break;
+            default:printf("输入有误,请重新输入\n");break;
+        }
+        if(flag==1) break;
+    }
+}
+
+//费用管理
+void cost_recharge(){
+    long long id;
+    double money;
+    printf("请输入要充值的卡号:\n");
+    scanf("%lld",&id);
+    Card *node=head.next;
+    while(node){
+        if(node->id==id){
+            printf("请输入充值的金额:\n");
+            scanf("%lf",&money);
+            node->card_money+=money;
+            printf("充值成功\n");
+            break;
+        }
+        node = node->next;
+    }
+    if(node==NULL) printf("无此卡，充值失败\n");
+}//充值功能
+void cost_refund(){
+    long long id;
+    char secret[20];
+    printf("请输入要退费的卡号和密码:\n");
+    scanf("%lld%s",&id,secret);
+    Card *node=head.next;
+    while(node){
+        if(node->id==id){
+            if(strcmp(secret,node->secret)==0){
+                printf("给您%.2lf元\n",node->card_money);
+                node->card_money = 0;
+                break;
+            }
+            printf("密码错误,退费失败\n");
+        }
+        node = node->next;
+    }
+    if(node==NULL) printf("无此卡，退费失败\n");
+}//退费功能
+void cost_management(){
+    int i;
+    while(1){
+        int flag=0;
+        printf("费用管理:\n");
+        printf("1-充值\t2-退费\n3-退出费用管理\n");
+        scanf("%d",&i);
+        switch(i){
+            case 1:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                cost_recharge();break;
+            case 2:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                cost_refund();break;
+            case 3:flag=1;break;
+            default:printf("输入有误,请重新输入\n");break;
+        }
+        if(flag==1) break;
+    }
+}
+
+//查询统计
+void query_card_print(Time*node){
+    printf("上机时间:%d年%d月%d日%d时%d分\n",node->up->year,node->up->month,node->up->day,node->up->hour,node->up->min);
+    printf("下机时间:%d年%d月%d日%d时%d分\n",node->down->year,node->down->month,node->down->day,node->down->hour,node->down->min);
+    printf("金额:%lf\n",node->money);
+}//卡消费记录打印
+void query_card_total_count(Time*node,double *sum){
+    *sum+=node->money;
+}//总营业额统计
+void query_card_month_count(Time*node,double *sum,int*board){
+    sum[node->up->month]+=node->money;
+    board[node->up->month]++;
+}//月营业额统计
+void query_card_consumption(Time*node,time_*t1,time_*t2,int i,double* sum){
+    while(node){
+        if(t1->year==t2->year&&node->up->year==t1->year){
+            if(t1->month==t2->month&&node->up->month==t1->month){
+                if(node->up->day>=t1->day&&node->up->day<=t2->day){
+                    if(i==0) query_card_print(node);
+                    else query_card_total_count(node,sum);
+                }
+            }
+            if(t1->month<t2->month){
+                if(node->up->month==t1->month){
+                    if(node->up->day>=t1->day){
+                        if(i==0) query_card_print(node);
+                        else query_card_total_count(node,sum);
+                    }
+                }
+                if(node->up->month==t2->month){
+                    if(node->up->day<=t2->day) {
+                        if (i==0) query_card_print(node);
+                        else query_card_total_count(node,sum);
+                    }
+                }
+                if(node->up->month<t2->month&&node->up->month>t1->month){
+                    if(i==0) query_card_print(node);
+                    else query_card_total_count(node,sum);
+                }
+            }
+        }
+        if(t1->year<t2->year){
+            if(node->up->year==t1->year){
+                if(node->up->month==t1->month){
+                    if(node->up->day>t1->day){
+                        if(i==0) query_card_print(node);
+                        else query_card_total_count(node,sum);
+                    }
+                }
+                if(node->up->month>t1->month){
+                    if(i==0) query_card_print(node);
+                    else query_card_total_count(node,sum);
+                }
+            }
+            if(node->up->year==t2->year){
+                if(node->up->month==t2->month){
+                    if(node->up->day<t1->day){
+                        if(i==0) query_card_print(node);
+                        else query_card_total_count(node,sum);
+                    }
+                }
+                if(node->up->month<t2->month){
+                    if(i==0) query_card_print(node);
+                    else query_card_total_count(node,sum);
+                }
+            }
+            if(node->up->year>t1->year&&node->up->year<t2->year){
+                if(i==0) query_card_print(node);
+                else query_card_total_count(node,sum);
+            }
+        }
+        node = node->next;
+    }
+}//卡消费
+void query_consumption_record(){
+    long long id;
+    double sum=0;
+    time_ t1,t2;
+    printf("请输入查询的卡号:\n");
+    scanf("%lld",&id);
+    Card*node = head.next;
+    while(node){
+        if(node->id==id){
+            printf("请输入起始年份、月份、日:\n");
+            scanf("%d%d%d",&t1.year,&t1.month,&t1.day);
+            printf("请输入终止年份、月份、日:\n");
+            scanf("%d%d%d",&t2.year,&t2.month,&t2.day);
+            query_card_consumption(node->time_head.next,&t1,&t2,0,&sum);
+            break;
+        }
+        node = node->next;
+    }
+    if(node==NULL) printf("无此卡，查询失败\n");
+}//查询卡消费记录功能
+void query_total_turnover(){
+    time_ t1,t2;
+    double sum=0;
+    Card*node = head.next;
+    printf("请输入起始年份、月份、日:\n");
+    scanf("%d%d%d",&t1.year,&t1.month,&t1.day);
+    printf("请输入终止年份、月份、日:\n");
+    scanf("%d%d%d",&t2.year,&t2.month,&t2.day);
+    while(node){
+        query_card_consumption(node->time_head.next,&t1,&t2,1,&sum);
+        node = node->next;
+    }
+    printf("总营业额为:%lf\n",sum);
+}//统计总营业额功能
+void query_month_turnover(){
+    double sum[13]={0};
+    int year,board[13]={0};
+    printf("请输入要查询的年份:\n");
+    scanf("%d",&year);
+    Card *node1 = head.next;
+    while(node1){
+        Time *node2 = node1->time_head.next;
+        while(node2){
+            if(node2->up->year==year) query_card_month_count(node2,sum,board);
+            node2 = node2->next;
+        }
+        node1 = node1->next;
+    }
+    char name[8];
+    itoa(year,name,10);
+    strcat(name,".txt");
+    FILE *fp;
+    if((fp= fopen(name,"a"))==NULL){
+        printf("打开文件%s失败",name);
+        exit(0);
+    }
+    printf("+---------------------------------------------------------------------------------------------------------------+\n");
+    printf("|2022年\t\t|1月\t|2月\t|3月\t|4月\t|5月\t|6月\t|7月\t|8月\t|9月\t|10月\t|11月\t|12月\t|\n");
+    printf("|上机次数:\t");
+    fprintf(fp,"+---------------------------------------------------------------------------------------------------------------+\n");
+    fprintf(fp,"|2022年\t\t|1月\t|2月\t|3月\t|4月\t|5月\t|6月\t|7月\t|8月\t|9月\t|10月\t|11月\t|12月\t|\n");
+    fprintf(fp,"|上机次数:\t");
+    for(int i=1;i<=12;i++){
+        printf("|%d次\t",board[i]);
+        fprintf(fp,"|%d次\t",board[i]);
+    }
+    printf("|\n");
+    fprintf(fp,"|\n");
+    printf("|总营业额:\t");
+    fprintf(fp,"|总营业额:\t");
+    for(int i=1;i<=12;i++){
+        printf("|%.1lf元\t",sum[i]);
+        fprintf(fp,"|%.1lf元\t",sum[i]);
+    }
+    printf("|\n");
+    fprintf(fp,"|\n");
+    printf("+---------------------------------------------------------------------------------------------------------------+\n");
+    fprintf(fp,"+---------------------------------------------------------------------------------------------------------------+\n");
+    if(fclose(fp)){
+        printf("关闭文件%s失败",name);
+        exit(0);
+    }
+}//统计月营业额功能
+void query_statistics(){
+    int i;
+    while(1){
+        int flag=0;
+        printf("查询统计:\n");
+        printf("1-查询消费记录\t2-统计总营业额\n3-统计月营业额\t4-退出查询统计\n");
+        scanf("%d",&i);
+        switch(i){
+            case 1:
+                if(user_now->read==0){
+                    printf("无权限\n");
+                    break;
+                }
+                query_consumption_record();break;
+            case 2:
+                if(user_now->read==0){
+                    printf("无权限\n");
+                    break;
+                }
+                query_total_turnover();break;
+            case 3:
+                if(user_now->read==0){
+                    printf("无权限\n");
+                    break;
+                }
+                query_month_turnover();break;
+            case 4:flag=1;break;
+            default:printf("输入有误,请重新输入\n");break;
+        }
+        if(flag==1) break;
+    }
+}
+
+//权限管理
+void user_write(){
+    FILE *fp;
+    if((fp= fopen("user.txt","w"))==NULL){
+        printf("打开文件user.txt失败");
+        exit(0);
+    }
+    user*node = &super_user;
+    while(node){
+        fprintf(fp,"%s %d %d\n",node->name,node->read,node->alter);
+        node = node->next;
+    }
+    if(fclose(fp)){
+        printf("关闭文件user.txt失败");
+        exit(0);
+    }
+}//将用户信息写入文件
+void user_rights_management(user*node){
+    printf("是否有查看权限:\n");
+    printf("1--有,0--无\n");
+    scanf("%d",&node->read);
+    printf("是否有修改权限:\n");
+    printf("1--有,0--无\n");
+    scanf("%d",&node->alter);
+    FILE *fp;
+    if((fp= fopen("user.txt","a"))==NULL){
+        printf("打开文件user.txt失败");
+        exit(0);
+    }
+    fprintf(fp,"%s %d %d\n",node->name,node->read,node->alter);
+    if(fclose(fp)){
+        printf("关闭文件user.txt失败");
+        exit(0);
+    }
+
+}//设置管理员权限
+void user_add(){
+    user*node_ = &super_user;
+    while(node_->next) node_ = node_->next;
+    user*node = (user*)malloc(sizeof(user));
+    if(node==NULL){
+        printf("分配内存失败\n");
+        return ;
+    }
+    node->next = NULL;
+    node_->next = node;
+    printf("请输入新建管理员名字:\n");
+    scanf("%s",node->name);
+    user_rights_management(node);
+    printf("创建成功\n");
+}//添加管理员功能
+void user_delete(){
+    char name[20];
+    printf("请输入要删除的管理员名字:\n");
+    scanf("%s",name);
+    user*pre = &super_user,*lat = super_user.next;
+    while(lat){
+        if(strcmp(name,lat->name)==0){
+            pre->next = lat->next;
+            lat->next = NULL;
+            break;
+        }
+        pre = pre->next;
+        lat = lat->next;
+    }
+    if(lat==NULL){
+        printf("没有该管理员，删除失败\n");
+        return;
+    }
+    free(lat);
+    printf("删除成功\n");
+}//删除管理员功能
+void rights_management(){
+    int i;
+    while(1){
+        int flag=0;
+        printf("权限管理:\n");
+        printf("1-添加管理员\t2-删除管理员\n3-退出权限管理\n");
+        scanf("%d",&i);
+        switch(i){
+            case 1:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                user_add();break;
+            case 2:
+                if(user_now->alter==0){
+                    printf("无权限\n");
+                    break;
+                }
+                user_delete();break;
+            case 3:flag=1;break;
+            default:printf("输入有误,请重新输入\n");break;
+        }
+        if(flag==1) break;
+    }
+}
+
+//系统
+void sys_login(int num){
+    if(num==1){
+        user_now = &super_user;
+        printf("登录成功\n");
+        return;
+    }
+    else{
+        char name[20];
+        user *node = &super_user;
+        printf("请输入登入的管理员名字:\n");
+        scanf("%s",name);
+        while(node){
+            if(strcmp(node->name,name)==0){
+                user_now = node;
+                printf("登录成功\n");
+                return;
+            }
+            node = node->next;
+        }
+        if(node==NULL) printf("无该管理员,登录失败\n");
+    }
+}//登录功能
+void sys(){
+    int num;
+    printf("登录系统:\n");
+    printf("1--超级管理员\t\t0--管理员\n");
+    scanf("%d",&num);
+    sys_login(num);
+}
+
+void write(){
+    card_write();
+    user_write();
+}//将信息写入文件中
+
+int main() {
+    init_head();
+    init_bill_standard();
+    init_user();
+    int i;
+    while(1){
+        fflush(stdin);
+        int flag=0;
+        printf("+========================================+\n");
+        printf("|         网吧收费管理系统               |\n");
+        printf("+========================================+\n");
+        printf("|  1-卡管理        2-计费标准管理        |\n"
+               "|  3-计费管理      4-费用管理            |\n"
+               "|  5-查询统计      6-权限管理            |\n"
+               "|  7-系统          8-退出网吧收费管理系统|\n");
+        printf("+----------------------------------------+\n");
+        scanf("%d",&i);
+        switch(i){
+            case 1:card_management();break;
+            case 2:bill_standard_management();break;
+            case 3:bill_management();break;
+            case 4:cost_management();break;
+            case 5:query_statistics();break;
+            case 6:rights_management();break;
+            case 7:sys();break;
+            case 8:flag=1;break;
+            default:printf("输入有误,请重新输入\n");break;
+        }
+        if(flag==1) break;
+    }
+    write();
+    return 0;
+}
